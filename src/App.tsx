@@ -22,12 +22,12 @@ function classify(total: number, cutoff: number) {
 }
 
 export default function App() {
-  // ★ フックはトップレベル固定（順序も個数も不変）
+  // フックはトップレベルで固定（順序・個数は不変）
   const [data, setData] = useState<QuestionData | null>(null);
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [submitted, setSubmitted] = useState(false);
 
-  // 設問ロード（毎回同じ1つの useEffect）
+  // 設問ロード（1つだけの useEffect）
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -37,31 +37,24 @@ export default function App() {
         const json = (await res.json()) as QuestionData;
         if (cancelled) return;
         setData(json);
-        // 回答の初期化：全問 null に（常に同じ形）
+        // 回答の初期化：全問 null に
         const init: AnswerMap = Object.fromEntries(
           json.questions.map((q) => [q.id, null])
         ) as AnswerMap;
         setAnswers(init);
       } catch (e) {
         console.error("failed to load questions:", e);
-        setData({
-          title: "データ読込に失敗しました",
-          cutoff: 12,
-          questions: [],
-        });
+        setData({ title: "データ読込に失敗しました", cutoff: 12, questions: [] });
       }
     })();
     return () => { cancelled = true; };
   }, []);
 
-  // ローディング表現（data が入るまで）
-  if (!data) {
-    return <div style={{ padding: 16 }}>読み込み中...</div>;
-  }
+  if (!data) return <div style={{ padding: 16 }}>読み込み中...</div>;
 
   const { title, cutoff, questions } = data;
 
-  // 集計（フックは使わず都度計算にする → フック個数が増えない）
+  // 集計：フックは使わず毎回計算（未回答は0点扱い）
   let total = 0;
   let unanswered = 0;
   for (const q of questions) {
@@ -73,6 +66,13 @@ export default function App() {
 
   const onSelect = (qid: string, score: 0 | 1 | 2) => {
     setAnswers((a) => ({ ...a, [qid]: score }));
+  };
+
+  const handleSubmit = () => {
+    if (unanswered > 0) {
+      alert(`未回答が ${unanswered} 問あります（未回答は 0 点として集計します）。`);
+    }
+    setSubmitted(true);
   };
 
   const resetAll = () => {
@@ -98,6 +98,7 @@ export default function App() {
     }
   };
 
+  // ---- UI ----
   const card: React.CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16 };
   const btn: React.CSSProperties = { padding: "10px 14px", borderRadius: 10, border: "1px solid #111", background: "#111", color: "#fff", fontWeight: 600, cursor: "pointer" };
   const btnGhost: React.CSSProperties = { padding: "10px 14px", borderRadius: 10, border: "1px solid #d1d5db", background: "#fff", color: "#111", fontWeight: 600, cursor: "pointer" };
@@ -108,7 +109,7 @@ export default function App() {
         <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h1 style={{ fontSize: 24, fontWeight: 800 }}>{title}</h1>
           <div style={{ fontSize: 12, color: "#6b7280" }}>0/1/2点 × {questions.length}問（最大 {questions.length * 2}点）</div>
-</header>
+        </header>
 
         {/* 進捗 */}
         <div style={{ marginBottom: 16 }}>
@@ -137,7 +138,7 @@ export default function App() {
                         <label key={inputId} htmlFor={inputId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", border: "1px solid " + (checked ? "#111" : "#d1d5db"), borderRadius: 10, background: checked ? "#f5f5f5" : "#fff", cursor: "pointer" }}>
                           <input id={inputId} type="radio" name={q.id} checked={checked} onChange={() => onSelect(q.id, c.score)} />
                           <span style={{ fontSize: 14 }}>{c.label}</span>
-                          <span style={{ marginLeft: "auto", fontSize: 12, color: "#6b7280" }}>{c.score}点</span>
+                          {/* 点数表示は出さない */}
                         </label>
                       );
                     })}
@@ -150,7 +151,7 @@ export default function App() {
 
         {/* アクション */}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
-          <button onClick={() => setSubmitted(true)} style={{ ...btn, opacity: unanswered > 0 ? 0.6 : 1 }} disabled={unanswered > 0} title={unanswered > 0 ? "全問に回答してください" : "採点する"}>採点する</button>
+          <button onClick={handleSubmit} style={btn}>採点する</button>
           <button onClick={resetAll} style={btnGhost}>リセット</button>
           <button onClick={copyResult} style={btnGhost}>結果をコピー</button>
         </div>
@@ -159,6 +160,11 @@ export default function App() {
         {submitted && (
           <section style={{ ...card, marginTop: 16 }}>
             <h2 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 8px 0" }}>結果</h2>
+            {unanswered > 0 && (
+              <div style={{ fontSize: 12, color: "#b45309", margin: "4px 0 8px" }}>
+                ※ 未回答 {unanswered} 問は 0 点として集計しています。
+              </div>
+            )}
             <div style={{ fontSize: 14, color: "#4b5563", marginBottom: 8 }}>
               総合点: <span style={{ fontWeight: 700, color: "#111" }}>{total}</span> / {questions.length * 2}（カットオフ {cutoff} 点）
             </div>
