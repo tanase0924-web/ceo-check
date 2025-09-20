@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import LeadForm, { Lead } from "./LeadForm";
+import { useEffect, useState } from "react";
+import LeadForm, { type Lead } from "./LeadForm";
 
 type Choice = { label: string; score: 0 | 1 | 2 };
 type Question = { id: string; text: string; choices: Choice[] };
@@ -25,8 +25,12 @@ function classify(total: number, cutoff: number) {
 export default function App() {
   // リード情報（localStorageから復元）
   const [lead, setLead] = useState<Lead | null>(() => {
-    const stored = localStorage.getItem("ceo-check-lead");
-    return stored ? (JSON.parse(stored) as Lead) : null;
+    try {
+      const stored = localStorage.getItem("ceo-check-lead");
+      return stored ? (JSON.parse(stored) as Lead) : null;
+    } catch {
+      return null;
+    }
   });
 
   // 設問データと回答
@@ -47,7 +51,7 @@ export default function App() {
         // 回答初期化
         const init: AnswerMap = Object.fromEntries(
           json.questions.map((q) => [q.id, null])
-        );
+        ) as AnswerMap;
         setAnswers(init);
       } catch (e) {
         console.error(e);
@@ -58,18 +62,21 @@ export default function App() {
     };
   }, []);
 
-  if (!lead) {
-    // まだリード入力してない → LeadFormを表示
-    return <LeadForm onDone={setLead} />;
-  }
+  // リード未入力ならフォーム表示
+  if (!lead) return <LeadForm onDone={setLead} />;
 
-  if (!data) return <div>読み込み中...</div>;
+  if (!data) return <div style={{ padding: 16 }}>読み込み中...</div>;
 
-  const unanswered = Object.values(answers).filter((a) => a === null).length;
-  const total = Object.values(answers).reduce(
-    (sum, a) => sum + (a ?? 0),
+  // 集計：null は 0 に寄せて数値で reduce（型エラー回避）
+  const unanswered = data.questions.reduce(
+    (acc, q) => acc + (answers[q.id] == null ? 1 : 0),
     0
   );
+  const total = data.questions.reduce((acc, q) => {
+    const v = answers[q.id];
+    return acc + (v ?? 0);
+  }, 0);
+
   const bucket = classify(total, data.cutoff);
 
   const handleSelect = (qid: string, score: 0 | 1 | 2) => {
@@ -86,9 +93,9 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          leadId: lead!.id,
-          leadEmail: lead!.email,
-          leadName: lead!.name,
+          leadId: lead.id,
+          leadEmail: lead.email,
+          leadName: lead.name,
           total,
           bucket: bucket.type,
           answers,
@@ -132,7 +139,9 @@ export default function App() {
               <li key={i}>{t}</li>
             ))}
           </ul>
-          <p>総合点: {total} / {data.questions.length * 2}</p>
+          <p>
+            総合点: {total} / {data.questions.length * 2}
+          </p>
         </div>
       )}
     </div>
