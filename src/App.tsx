@@ -13,6 +13,9 @@ type QuestionsPayload = {
 };
 
 export default function App() {
+  // ステップ制御
+  const [step, setStep] = useState<"lead" | "questions">("lead");
+
   // 設問
   const [payload, setPayload] = useState<QuestionsPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,10 +35,10 @@ export default function App() {
 
   // 送信制御
   const [sending, setSending] = useState(false);
-  const [sentAt, setSentAt] = useState<string | null>(null); // 二重送信防止
+  const [sentAt, setSentAt] = useState<string | null>(null);
   const submitTimes = useRef(0);
 
-  // 初期ロード：設問取得
+  // 設問データのロード
   useEffect(() => {
     (async () => {
       try {
@@ -63,16 +66,15 @@ export default function App() {
     setAnswers((prev) => ({ ...prev, [qid]: score }));
   }
 
-  // 合計点（全問回答済みのみ算出：確定合計）
+  // 合計点
   const total: number | null = useMemo(() => {
     if (!payload) return null;
-    // (number | null)[] → 全て number になったら合計、それ以外なら null
     const vals = payload.questions.map((q) => answers[q.id]);
     if (vals.some((v) => v === null)) return null;
     return (vals as number[]).reduce((acc, v) => acc + v, 0);
   }, [answers, payload]);
 
-  // 暫定合計（未回答は 0 として加算）
+  // 暫定合計（未回答は0扱い）
   const partialTotal: number = useMemo(() => {
     return Object.values(answers).reduce<number>(
       (acc, v) => acc + (typeof v === "number" ? v : 0),
@@ -80,7 +82,7 @@ export default function App() {
     );
   }, [answers]);
 
-  // 判定（確定合計が出たときのみ）
+  // 判定
   const bucket: "" | "自走型" | "右腕不在型" = useMemo(() => {
     if (!payload || total === null) return "";
     return total >= payload.cutoff ? "自走型" : "右腕不在型";
@@ -92,11 +94,10 @@ export default function App() {
     return payload.questions.filter((q) => answers[q.id] === null).map((q) => q.id);
   }
 
-  // 送信
+  // 送信処理
   async function handleSubmit() {
     if (!payload) return;
 
-    // 二重送信防止
     if (sentAt) {
       submitTimes.current += 1;
       alert(
@@ -107,7 +108,6 @@ export default function App() {
       return;
     }
 
-    // 未回答チェック
     const missing = getUnansweredIds();
     if (missing.length) {
       const first = missing[0];
@@ -122,11 +122,10 @@ export default function App() {
       return;
     }
     if (!lead || !lead.id) {
-      alert("送信前に、上部のフォームで氏名・メール・電話を保存してください。");
+      alert("送信前に、ご連絡先を保存してください。");
       return;
     }
 
-    // null を含まない answers を作成
     const cleanAnswers: Record<string, number> = {};
     for (const [k, v] of Object.entries(answers)) cleanAnswers[k] = (v ?? 0) as number;
 
@@ -136,9 +135,9 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          leadId: lead.id, // API は leadId を期待
+          leadId: lead.id,
           total,
-          bucket, // "自走型" | "右腕不在型"
+          bucket,
           answers: cleanAnswers,
         }),
       });
@@ -157,7 +156,7 @@ export default function App() {
     }
   }
 
-  // 表示
+  // UI
   if (loading) {
     return (
       <main className="wrap">
@@ -173,7 +172,7 @@ export default function App() {
     );
   }
 
-  // 最大得点（各設問の最大スコア合計）※必ず初期値 0 を指定
+  // 最大得点
   const maxScore = payload.questions.reduce<number>((acc, q) => {
     const max = q.choices.reduce<number>((m, c) => (c.score > m ? c.score : m), 0);
     return acc + max;
@@ -189,87 +188,93 @@ export default function App() {
       <header className="hero">
         <span className="badge">経営者向け 10問セルフチェック</span>
         <h1 className="title">{payload.title || "経営者向け10問チェック"}</h1>
-        <p className="subtitle">10問に回答 → 採点 → メールで結果をお届けします。</p>
+        <p className="subtitle">まずはご連絡先をご入力ください。</p>
       </header>
 
       <main className="wrap grid">
-        {/* ご連絡先（最初に表示） */}
-        <section className="card">
-          <LeadForm onDone={(l: Lead) => setLead(l)} current={lead || undefined} />
-        </section>
-
-        {/* 質問（次に表示） */}
-        {payload.questions.map((q) => (
-          <section key={q.id} className="q" data-qid={q.id}>
-            <h3>{q.text}</h3>
-            <div className="choices">
-              {q.choices.map((c, i) => {
-                const selected = answers[q.id] === c.score;
-                return (
-                  <label key={i} className={`radio ${selected ? "selected" : ""}`}>
-                    <input
-                      type="radio"
-                      name={q.id}
-                      checked={selected}
-                      onChange={() => onSelect(q.id, c.score)}
-                      aria-pressed={selected}
-                    />
-                    <span className="label">{c.label}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </section>
-        ))}
-
-        {/* 進捗・送信（最後に表示） */}
-        <section className="card">
-          <div className="toolbar">
-            <div className="counter">
-              進捗：{answeredCount}/{payload.questions.length}
-              {/* 暫定合計を表示（未回答は0扱い） */}
-              <span className="help" style={{ marginLeft: 8 }}>
-                （暫定合計：{partialTotal} / {answeredCount * 2}）
-              </span>
-            </div>
-            <div style={{ flex: 1, minWidth: 220 }}>
-              <div className="progress">
-                <i style={{ width: `${progressPct}%` }} />
-              </div>
-            </div>
-            <button
-              className="btn"
-              onClick={handleSubmit}
-              disabled={sending || !!sentAt}
-              title={sentAt ? "すでに送信済みです" : "採点して送信"}
-            >
-              {sentAt ? "回答完了でメールで回答内容送信済" : sending ? "送信中..." : "採点する"}
-            </button>
-          </div>
-          <p className="help">
-            ※ 未回答があっても暫定合計を表示。確定の合計と判定は全問回答後に表示されます。
-          </p>
-        </section>
-
-        {/* 確定結果（全問回答時のみ） */}
-        {total !== null && (
-          <section className="card result">
-            <div>
-              <strong>総合点：</strong>
-              {total} / {maxScore}
-            </div>
-            <div>
-              <strong>判定：</strong>
-              <span className={bucket === "自走型" ? "bucket-ok" : "bucket-bad"}>{bucket}</span>
-              <span className="help" style={{ marginLeft: 8 }}>
-                （カットオフ：{payload.cutoff} 点）
-              </span>
-            </div>
-            <div className="help">※ 詳細はメールをご確認ください。</div>
+        {step === "lead" && (
+          <section className="card">
+            <LeadForm
+              onDone={(l: Lead) => {
+                setLead(l);
+                setStep("questions");
+              }}
+              current={lead || undefined}
+            />
           </section>
         )}
 
-        <footer className="foot">© {new Date().getFullYear()} Granempathia. All rights reserved.</footer>
+        {step === "questions" && (
+          <>
+            {/* 質問 */}
+            {payload.questions.map((q) => (
+              <section key={q.id} className="q" data-qid={q.id}>
+                <h3>{q.text}</h3>
+                <div className="choices">
+                  {q.choices.map((c, i) => {
+                    const selected = answers[q.id] === c.score;
+                    return (
+                      <label key={i} className={`radio ${selected ? "selected" : ""}`}>
+                        <input
+                          type="radio"
+                          name={q.id}
+                          checked={selected}
+                          onChange={() => onSelect(q.id, c.score)}
+                        />
+                        <span className="label">{c.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+
+            {/* 進捗と送信 */}
+            <section className="card">
+              <div className="toolbar">
+                <div className="counter">
+                  進捗：{answeredCount}/{payload.questions.length}
+                  <span className="help" style={{ marginLeft: 8 }}>
+                    （暫定合計：{partialTotal}）
+                  </span>
+                </div>
+                <div style={{ flex: 1, minWidth: 220 }}>
+                  <div className="progress">
+                    <i style={{ width: `${progressPct}%` }} />
+                  </div>
+                </div>
+                <button
+                  className="btn"
+                  onClick={handleSubmit}
+                  disabled={sending || !!sentAt}
+                >
+                  {sentAt ? "回答完了で送信済" : sending ? "送信中..." : "採点する"}
+                </button>
+              </div>
+            </section>
+
+            {/* 判定結果 */}
+            {total !== null && (
+              <section className="card result">
+                <div>
+                  <strong>総合点：</strong>
+                  {total} / {maxScore}
+                </div>
+                <div>
+                  <strong>判定：</strong>
+                  <span className={bucket === "自走型" ? "bucket-ok" : "bucket-bad"}>
+                    {bucket}
+                  </span>
+                </div>
+                <div className="help">※ 詳細はメールをご確認ください。</div>
+              </section>
+            )}
+          </>
+        )}
+
+        <footer className="foot">
+          © {new Date().getFullYear()} Granempathia. All rights reserved.
+        </footer>
       </main>
     </>
   );
