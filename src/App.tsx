@@ -67,7 +67,7 @@ export default function App() {
 
   if (!data) return <div style={{ padding: 16 }}>読み込み中...</div>;
 
-  // 集計：null は 0 に寄せて数値で reduce（型エラー回避）
+  // 集計：null は 0 に寄せて数値で reduce
   const unanswered = data.questions.reduce(
     (acc, q) => acc + (answers[q.id] == null ? 1 : 0),
     0
@@ -96,6 +96,7 @@ export default function App() {
           leadId: lead.id,
           leadEmail: lead.email,
           leadName: lead.name,
+          leadPhone: lead.phone ?? "",
           total,
           bucket: bucket.type,
           answers,
