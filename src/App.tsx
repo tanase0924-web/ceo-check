@@ -23,7 +23,7 @@ export default function App() {
     [answers]
   );
 
-  // リード（フォームで作成後に id を持つ）
+  // リード（LeadForm が保存して id 付きで渡してくる）
   const [lead, setLead] = useState<Lead | null>(null);
 
   // 送信状態
@@ -180,13 +180,7 @@ export default function App() {
             </div>
             <div style={{ flex: 1, minWidth: 220 }}>
               <div className="progress">
-                <i
-                  style={{
-                    width: `${
-                      (answeredCount / payload.questions.length) * 100
-                    }%`,
-                  }}
-                />
+                <i style={{ width: `${(answeredCount / payload.questions.length) * 100}%` }} />
               </div>
             </div>
             <button
@@ -195,11 +189,7 @@ export default function App() {
               disabled={sending || !!sentAt}
               title={sentAt ? "すでに送信済みです" : "採点して送信"}
             >
-              {sentAt
-                ? "回答完了でメールで回答内容送信済"
-                : sending
-                ? "送信中..."
-                : "採点する"}
+              {sentAt ? "回答完了でメールで回答内容送信済" : sending ? "送信中..." : "採点する"}
             </button>
           </div>
           <p className="help">※ 未回答があると警告。採点後の再送信は不可（重複メール防止）。</p>
@@ -239,24 +229,14 @@ export default function App() {
             </div>
             <div>
               <strong>判定：</strong>
-              <span
-                className={
-                  bucket === "自走型" ? "bucket-ok" : "bucket-bad"
-                }
-              >
-                {bucket}
-              </span>
-              <span className="help" style={{ marginLeft: 8 }}>
-                （カットオフ：{payload.cutoff} 点）
-              </span>
+              <span className={bucket === "自走型" ? "bucket-ok" : "bucket-bad"}>{bucket}</span>
+              <span className="help" style={{ marginLeft: 8 }}>（カットオフ：{payload.cutoff} 点）</span>
             </div>
             <div className="help">※ 詳細はメールをご確認ください。</div>
           </section>
         )}
 
-        <footer className="foot">
-          © {new Date().getFullYear()} Granempathia. All rights reserved.
-        </footer>
+        <footer className="foot">© {new Date().getFullYear()} Granempathia. All rights reserved.</footer>
       </main>
     </>
   );
