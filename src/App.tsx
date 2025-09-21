@@ -1,3 +1,4 @@
+// src/App.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./ui.css";
 import LeadForm from "./LeadForm";
@@ -24,10 +25,10 @@ export default function App() {
     [answers]
   );
 
-  // リード（LeadForm が保存して id 付きで渡してくる）
+  // リード（LeadForm が保存して id 付きで渡す）
   const [lead, setLead] = useState<Lead | null>(null);
 
-  // 送信状態
+  // 送信制御
   const [sending, setSending] = useState(false);
   const [sentAt, setSentAt] = useState<string | null>(null); // 二重送信防止
   const submitTimes = useRef(0);
@@ -77,9 +78,7 @@ export default function App() {
   // 未回答IDs
   function getUnansweredIds(): string[] {
     if (!payload) return [];
-    return payload.questions
-      .filter((q) => answers[q.id] === null)
-      .map((q) => q.id);
+    return payload.questions.filter((q) => answers[q.id] === null).map((q) => q.id);
   }
 
   // 送信
@@ -126,7 +125,7 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          leadId: lead.id, // 重要：leadId を送る
+          leadId: lead.id, // API は leadId を期待
           total,
           bucket, // "自走型" | "右腕不在型"
           answers: cleanAnswers,
@@ -177,7 +176,36 @@ export default function App() {
       </header>
 
       <main className="wrap grid">
-        {/* 進行バー */}
+        {/* ご連絡先（最初に表示） */}
+        <section className="card">
+          <LeadForm onDone={(l: Lead) => setLead(l)} current={lead || undefined} />
+        </section>
+
+        {/* 質問（次に表示） */}
+        {payload.questions.map((q) => (
+          <section key={q.id} className="q" data-qid={q.id}>
+            <h3>{q.text}</h3>
+            <div className="choices">
+              {q.choices.map((c, i) => {
+                const selected = answers[q.id] === c.score;
+                return (
+                  <label key={i} className={`radio ${selected ? "selected" : ""}`}>
+                    <input
+                      type="radio"
+                      name={q.id}
+                      checked={selected}
+                      onChange={() => onSelect(q.id, c.score)}
+                      aria-pressed={selected}
+                    />
+                    <span className="label">{c.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </section>
+        ))}
+
+        {/* 進捗・送信（最後に表示） */}
         <section className="card">
           <div className="toolbar">
             <div className="counter">
@@ -204,32 +232,7 @@ export default function App() {
           <p className="help">※ 未回答があると警告。採点後の再送信は不可（重複メール防止）。</p>
         </section>
 
-        {/* リードフォーム（保存すると id 付きで onDone される） */}
-        <section className="card">
-          <LeadForm onDone={(l: Lead) => setLead(l)} current={lead || undefined} />
-        </section>
-
-        {/* 質問 */}
-        {payload.questions.map((q) => (
-          <section key={q.id} className="q" data-qid={q.id}>
-            <h3>{q.text}</h3>
-            <div className="choices">
-              {q.choices.map((c, i) => (
-                <label key={i} className="radio">
-                  <input
-                    type="radio"
-                    name={q.id}
-                    checked={answers[q.id] === c.score}
-                    onChange={() => onSelect(q.id, c.score)}
-                  />
-                  <span className="label">{c.label}</span>
-                </label>
-              ))}
-            </div>
-          </section>
-        ))}
-
-        {/* 結果 */}
+        {/* 結果（任意表示） */}
         {total !== null && (
           <section className="card result">
             <div>
