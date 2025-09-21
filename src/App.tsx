@@ -11,7 +11,7 @@ type QuestionsPayload = {
   questions: Question[];
 };
 
-type Lead = { id: string; name: string; email: string; phone?: string | null };
+export type Lead = { id: string; name: string; email: string; phone?: string | null };
 
 // ---------- Component ----------
 export default function App() {
@@ -20,10 +20,10 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
 
-  // 回答
-  const [answers, setAnswers] = useState<Record<string, number | null>>({});
+  // 回答（未回答は undefined）
+  const [answers, setAnswers] = useState<Record<string, number | undefined>>({});
   const answeredCount = useMemo(
-    () => Object.values(answers).filter((v) => typeof v === "number").length,
+    () => Object.values(answers).filter((v): v is number => typeof v === "number").length,
     [answers]
   );
 
@@ -36,17 +36,16 @@ export default function App() {
   const submitTimes = useRef(0);
 
   // 結果
-  const total = useMemo(() => {
+  const total: number | null = useMemo(() => {
     if (!payload) return null;
-    // すべて数値になったら合計を返す。未回答がある場合は null を返す。
     const vals = payload.questions.map((q) => answers[q.id]);
     if (vals.some((v) => typeof v !== "number")) return null;
+    // 初期値 0 を渡して acc が null 扱いにならないようにする
     return vals.reduce((acc, v) => acc + (v as number), 0);
   }, [answers, payload]);
 
-  const bucket = useMemo(() => {
+  const bucket: "" | "自走型" | "右腕不在型" = useMemo(() => {
     if (!payload || total === null) return "";
-    // 仕様：cutoff 以上 → 「自走型」、未満 → 「右腕不在型」
     return total >= payload.cutoff ? "自走型" : "右腕不在型";
   }, [payload, total]);
 
@@ -59,8 +58,8 @@ export default function App() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as QuestionsPayload;
 
-        const init: Record<string, number | null> = {};
-        for (const q of data.questions) init[q.id] = null;
+        const init: Record<string, number | undefined> = {};
+        for (const q of data.questions) init[q.id] = undefined;
 
         setPayload(data);
         setAnswers(init);
@@ -106,15 +105,16 @@ export default function App() {
     if (missing.length) {
       const first = missing[0];
       alert("未回答の質問があります。すべて回答してください。");
-      // 最初の未回答までスクロール
       const el = document.querySelector<HTMLElement>(`[data-qid="${first}"]`);
       if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
 
-    // 採点
-    const sum = Object.values(answers).reduce((acc, v) => acc + (v as number), 0);
-    const resultBucket = sum >= payload.cutoff ? "自走型" : "右腕不在型";
+    // 採点結果が null のまま使われないようにガード
+    if (total === null) {
+      alert("採点できませんでした。未回答がないかご確認ください。");
+      return;
+    }
 
     // リード必須
     if (!lead) {
@@ -122,18 +122,18 @@ export default function App() {
       return;
     }
 
+    const resultBucket = total >= payload.cutoff ? "自走型" : "右腕不在型";
+
     setSending(true);
     try {
-      // 1) リードはすでに保存済み（LeadForm から）。念のため存在チェック。
       if (!lead.id) throw new Error("lead_id が取得できませんでした。");
 
-      // 2) 回答送信（保存＋メール送付）
       const res = await fetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           leadId: lead.id,
-          total: sum,
+          total,                 // ← total は number 確定
           bucket: resultBucket,
           answers,
         }),
@@ -218,8 +218,9 @@ export default function App() {
 
         {/* リードフォーム（氏名/メール/電話） */}
         <section className="card">
+          {/* あなたの LeadForm は onDone を受け取る実装なので合わせる */}
           <LeadForm
-            onSaved={(l) => setLead(l)}
+            onDone={(l: Lead) => setLead(l)}
             current={lead || undefined}
           />
         </section>
@@ -237,7 +238,7 @@ export default function App() {
                     checked={answers[q.id] === c.score}
                     onChange={() => onSelect(q.id, c.score)}
                   />
-                  {/* 点数は表示しない（依頼どおり） */}
+                  {/* 点数は表示しない */}
                   <span className="label">{c.label}</span>
                 </label>
               ))}
@@ -258,9 +259,7 @@ export default function App() {
                 className={
                   bucket === "自走型"
                     ? "bucket-ok"
-                    : bucket === "要改善"
-                    ? "bucket-warn"
-                    : "bucket-bad"
+                    : "bucket-bad" // 現仕様は2分類
                 }
               >
                 {bucket}
