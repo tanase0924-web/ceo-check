@@ -264,8 +264,7 @@ export default function App() {
             cursor: sending ? "not-allowed" : "pointer",
           }}
         >
-          {sentAt ? "再送不可（送信済み）" : sending ? "送信中..." : "採点する"}
-        </button>
+{sentAt ? "回答完了でメールで回答内容送信済" : sending ? "送信中..." : "採点する"}        </button>
         <span style={{ color: "#6b7280", fontSize: 12 }}>
           未回答: {unansweredCount} / {questions.length}
         </span>
