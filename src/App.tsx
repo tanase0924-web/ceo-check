@@ -1,165 +1,263 @@
-// src/App.tsx
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./ui.css";
+import LeadForm, { Lead } from "./LeadForm";
 
-type Question = {
-  id: string;
-  text: string;
-  options: { label: string; value: number }[];
+type Choice = { label: string; score: number };
+type Question = { id: string; text: string; choices: Choice[] };
+type QuestionsPayload = {
+  title: string;
+  cutoff: number;
+  questions: Question[];
 };
-
-type Lead = {
-  name: string;
-  email: string;
-  phone: string;
-};
-
-// ダミーの設問（必要に応じて差し替え可）
-const questions: Question[] = [
-  { id: "q1", text: "経営方針を明文化している", options: [{ label: "はい", value: 1 }, { label: "いいえ", value: 0 }] },
-  { id: "q2", text: "幹部に意思決定を委譲している", options: [{ label: "はい", value: 1 }, { label: "いいえ", value: 0 }] },
-  { id: "q3", text: "定例で振り返りをしている", options: [{ label: "はい", value: 2 }, { label: "いいえ", value: 0 }] },
-  { id: "q4", text: "部下の育成計画を持っている", options: [{ label: "はい", value: 2 }, { label: "いいえ", value: 0 }] },
-  { id: "q5", text: "売上に依存しない仕組みを持つ", options: [{ label: "はい", value: 2 }, { label: "いいえ", value: 0 }] },
-  { id: "q6", text: "社内に代替可能人材がいる", options: [{ label: "はい", value: 1 }, { label: "いいえ", value: 0 }] },
-  { id: "q7", text: "業務マニュアルが整備されている", options: [{ label: "はい", value: 2 }, { label: "いいえ", value: 0 }] },
-  { id: "q8", text: "幹部候補が育っている", options: [{ label: "はい", value: 2 }, { label: "いいえ", value: 0 }] },
-  { id: "q9", text: "財務データを定期的に確認している", options: [{ label: "はい", value: 1 }, { label: "いいえ", value: 0 }] },
-  { id: "q10", text: "経営理念を周知している", options: [{ label: "はい", value: 1 }, { label: "いいえ", value: 0 }] },
-];
 
 export default function App() {
-  // 編集用ドラフト（非null）
-  const [leadDraft, setLeadDraft] = useState<Lead>({ name: "", email: "", phone: "" });
-  // 確定後にセット（null: まだ未確定）
-  const [lead, setLead] = useState<Lead | null>(null);
+  // 設問
+  const [payload, setPayload] = useState<QuestionsPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
 
   // 回答（未回答は null）
-  const [answers, setAnswers] = useState<Record<string, number | null>>(
-    Object.fromEntries(questions.map((q) => [q.id, null]))
+  const [answers, setAnswers] = useState<Record<string, number | null>>({});
+  const answeredCount = useMemo(
+    () => Object.values(answers).filter((v): v is number => typeof v === "number").length,
+    [answers]
   );
 
-  const [submitted, setSubmitted] = useState(false);
+  // リード（フォームで作成後に id を持つ）
+  const [lead, setLead] = useState<Lead | null>(null);
 
+  // 送信状態
+  const [sending, setSending] = useState(false);
+  const [sentAt, setSentAt] = useState<string | null>(null); // 二重送信防止
+  const submitTimes = useRef(0);
+
+  // 合計点（全問回答済みのみ算出）
   const total: number | null = useMemo(() => {
-    const vals = Object.values(answers); // (number | null)[]
+    if (!payload) return null;
+    const vals = payload.questions.map((q) => answers[q.id]); // (number | null)[]
     if (vals.some((v) => v === null)) return null;
-    // 初期値 0 を渡して acc の null 警告を回避
-    return (vals as number[]).reduce((acc, v) => acc + v, 0);
-  }, [answers]);
+    return (vals as number[]).reduce((acc, v) => acc + v, 0); // 初期値 0 指定
+  }, [answers, payload]);
 
-  const bucket = useMemo(() => {
-    if (total === null) return "";
-    // 閾値は仮。必要に応じて調整 or JSONから取得に差し替え
-    if (total >= 15) return "自走型";
-    if (total >= 10) return "要改善";
-    return "右腕不在型";
-  }, [total]);
+  // 判定
+  const bucket: "" | "自走型" | "右腕不在型" = useMemo(() => {
+    if (!payload || total === null) return "";
+    return total >= payload.cutoff ? "自走型" : "右腕不在型";
+  }, [payload, total]);
 
+  // 初期ロード
+  useEffect(() => {
+    (async () => {
+      try {
+        setLoading(true);
+        const res = await fetch("/questions.json", { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as QuestionsPayload;
+
+        const init: Record<string, number | null> = {};
+        for (const q of data.questions) init[q.id] = null;
+
+        setPayload(data);
+        setAnswers(init);
+        setLoadErr(null);
+      } catch (e: any) {
+        setLoadErr(`設問データの取得に失敗しました: ${e?.message || e}`);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  // 回答選択
+  function onSelect(qid: string, score: number) {
+    setAnswers((prev) => ({ ...prev, [qid]: score }));
+  }
+
+  // 未回答IDs
+  function getUnansweredIds(): string[] {
+    if (!payload) return [];
+    return payload.questions
+      .filter((q) => answers[q.id] === null)
+      .map((q) => q.id);
+  }
+
+  // 提出
   async function handleSubmit() {
-    if (submitted) {
-      alert("すでに送信済みです。メールも送信されています。");
+    if (!payload) return;
+
+    // 二重送信防止
+    if (sentAt) {
+      submitTimes.current += 1;
+      alert(
+        `この回答はすでに送信済みです（${new Date(
+          sentAt
+        ).toLocaleString()}）。\n重複送信はできません。`
+      );
       return;
     }
-    if (!lead) {
-      alert("まず氏名・メール・電話を入力して、設問に進んでください。");
+
+    // 未回答
+    const missing = getUnansweredIds();
+    if (missing.length) {
+      const first = missing[0];
+      alert("未回答の質問があります。すべて回答してください。");
+      const el = document.querySelector<HTMLElement>(`[data-qid="${first}"]`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
+
     if (total === null) {
-      alert("未回答の設問があります。すべて回答してください。");
+      alert("採点できませんでした。未回答がないかご確認ください。");
       return;
     }
 
-    // 必要に応じて API をあなたの実装に合わせてください
-    const res = await fetch("/api/submit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lead, answers, total, bucket }),
-    });
+    if (!lead || !lead.id) {
+      alert("送信前に、上部のフォームで氏名・メール・電話を保存してください。");
+      return;
+    }
 
-    if (res.ok) {
-      alert("回答を送信しました。結果をメールで送信済みです。");
-      setSubmitted(true);
-    } else {
-      const t = await res.text();
-      alert("送信に失敗しました: " + t);
+    // null を含まない answers を作成
+    const cleanAnswers: Record<string, number> = {};
+    for (const [k, v] of Object.entries(answers)) cleanAnswers[k] = v as number;
+
+    setSending(true);
+    try {
+      const res = await fetch("/api/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leadId: lead.id, // ★ 重要：leadId を送る
+          total,
+          bucket, // "自走型" | "右腕不在型"
+          answers: cleanAnswers,
+        }),
+      });
+
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(`submit API error: ${t}`);
+      }
+
+      setSentAt(new Date().toISOString());
+      alert("送信が完了しました。結果をメールでお送りしました。");
+    } catch (e: any) {
+      alert(`送信に失敗しました：${e?.message || e}`);
+    } finally {
+      setSending(false);
     }
   }
 
-  const allAnswered = total !== null;
+  // 表示
+  if (loading) {
+    return (
+      <main className="wrap">
+        <p>読み込み中...</p>
+      </main>
+    );
+  }
+  if (loadErr || !payload) {
+    return (
+      <main className="wrap">
+        <p style={{ color: "#ef4444" }}>{loadErr || "データがありません。"}</p>
+      </main>
+    );
+  }
 
   return (
-    <div className="app-container">
-      {!lead ? (
-        <div className="card">
-          <h2>ご連絡先を入力してください</h2>
-          <input
-            placeholder="氏名"
-            value={leadDraft.name}
-            onChange={(e) => setLeadDraft((p) => ({ ...p, name: e.target.value }))}
-          />
-          <input
-            placeholder="メールアドレス"
-            value={leadDraft.email}
-            onChange={(e) => setLeadDraft((p) => ({ ...p, email: e.target.value }))}
-          />
-          <input
-            placeholder="電話番号"
-            value={leadDraft.phone}
-            onChange={(e) => setLeadDraft((p) => ({ ...p, phone: e.target.value }))}
-          />
-          <button
-            className="btn"
-            onClick={() => {
-              if (!leadDraft.name || !leadDraft.email) {
-                alert("氏名とメールは必須です。");
-                return;
-              }
-              setLead(leadDraft);
-            }}
-          >
-            設問に進む
-          </button>
-        </div>
-      ) : (
-        <div className="card">
-          <h2>経営者向け10問チェック</h2>
+    <>
+      <header className="hero">
+        <span className="badge">経営者向け 10問セルフチェック</span>
+        <h1 className="title">{payload.title || "経営者向け10問チェック"}</h1>
+        <p className="subtitle">10問に回答 → 採点 → メールで結果をお届けします。</p>
+      </header>
 
-          {questions.map((q) => (
-            <div key={q.id} className="question">
-              <p>{q.text}</p>
-              <div className="options">
-                {q.options.map((opt) => (
-                  <label key={opt.label}>
-                    <input
-                      type="radio"
-                      name={q.id}
-                      value={opt.value}
-                      checked={answers[q.id] === opt.value}
-                      onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: opt.value }))}
-                    />
-                    {opt.label}
-                  </label>
-                ))}
+      <main className="wrap grid">
+        {/* 進行バー */}
+        <section className="card">
+          <div className="toolbar">
+            <div className="counter">
+              進捗：{answeredCount}/{payload.questions.length}
+            </div>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <div className="progress">
+                <i
+                  style={{
+                    width: `${
+                      (answeredCount / payload.questions.length) * 100
+                    }%`,
+                  }}
+                />
               </div>
             </div>
-          ))}
-
-          <div className="result">
-            {total !== null ? (
-              <p>
-                現在の合計点: {total} / 20（判定: {bucket}）
-              </p>
-            ) : (
-              <p>未回答の設問があります。</p>
-            )}
+            <button
+              className="btn"
+              onClick={handleSubmit}
+              disabled={sending || !!sentAt}
+              title={sentAt ? "すでに送信済みです" : "採点して送信"}
+            >
+              {sentAt
+                ? "回答完了でメールで回答内容送信済"
+                : sending
+                ? "送信中..."
+                : "採点する"}
+            </button>
           </div>
+          <p className="help">※ 未回答があると警告。採点後の再送信は不可（重複メール防止）。</p>
+        </section>
 
-          <button className="btn primary" onClick={handleSubmit} disabled={submitted || !allAnswered}>
-            {submitted ? "回答完了でメールで回答内容送信済" : "採点して送信"}
-          </button>
-        </div>
-      )}
-    </div>
+        {/* リードフォーム（保存すると id 付きで onDone される） */}
+        <section className="card">
+          <LeadForm onDone={(l) => setLead(l)} current={lead || undefined} />
+        </section>
+
+        {/* 質問 */}
+        {payload.questions.map((q) => (
+          <section key={q.id} className="q" data-qid={q.id}>
+            <h3>{q.text}</h3>
+            <div className="choices">
+              {q.choices.map((c, i) => (
+                <label key={i} className="radio">
+                  <input
+                    type="radio"
+                    name={q.id}
+                    checked={answers[q.id] === c.score}
+                    onChange={() => onSelect(q.id, c.score)}
+                  />
+                  <span className="label">{c.label}</span>
+                </label>
+              ))}
+            </div>
+          </section>
+        ))}
+
+        {/* 結果 */}
+        {total !== null && (
+          <section className="card result">
+            <div>
+              <strong>総合点：</strong>
+              {total} / {payload.questions.length * 2}
+            </div>
+            <div>
+              <strong>判定：</strong>
+              <span
+                className={
+                  bucket === "自走型" ? "bucket-ok" : "bucket-bad"
+                }
+              >
+                {bucket}
+              </span>
+              <span className="help" style={{ marginLeft: 8 }}>
+                （カットオフ：{payload.cutoff} 点）
+              </span>
+            </div>
+            <div className="help">※ 詳細はメールをご確認ください。</div>
+          </section>
+        )}
+
+        <footer className="foot">
+          © {new Date().getFullYear()} Granempathia. All rights reserved.
+        </footer>
+      </main>
+    </>
   );
 }

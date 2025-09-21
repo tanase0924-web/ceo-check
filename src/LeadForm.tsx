@@ -1,56 +1,79 @@
 import { useState } from "react";
 
 export type Lead = {
-  id: string;
+  id?: string;       // 保存後にサーバーから付与
   name: string;
   email: string;
-  phone?: string;
+  phone?: string | null;
 };
 
-export default function LeadForm({ onDone }: { onDone: (lead: Lead) => void }) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+type Props = {
+  onDone: (lead: Lead) => void;          // id を含む Lead を返す
+  current?: Lead;                         // 既存値（任意）
+};
 
-  async function handleSubmit() {
-    setError(null);
-    if (!name || !email) {
-      setError("名前とメールは必須です。");
+export default function LeadForm({ onDone, current }: Props) {
+  const [name, setName]   = useState(current?.name  ?? "");
+  const [email, setEmail] = useState(current?.email ?? "");
+  const [phone, setPhone] = useState(current?.phone ?? "");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function save() {
+    if (!name.trim() || !email.trim()) {
+      setMsg("氏名とメールは必須です。");
       return;
     }
-    setLoading(true);
+    setSaving(true);
+    setMsg(null);
     try {
       const res = await fetch("/api/lead", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, phone }),
+        body: JSON.stringify({ name: name.trim(), email: email.trim(), phone: (phone || "").trim() }),
       });
-      const data = await res.json();
-      if (!res.ok || !data.leadId) throw new Error(data.error || "保存に失敗しました");
-      const lead: Lead = { id: data.leadId, name, email, phone };
-      localStorage.setItem("ceo-check-lead", JSON.stringify(lead));
-      onDone(lead);
-    } catch (err: any) {
-      setError(err.message);
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(t);
+      }
+      const { id } = (await res.json()) as { id: string };
+      onDone({ id, name: name.trim(), email: email.trim(), phone: (phone || "").trim() });
+      setMsg("保存しました。続けて設問に回答してください。");
+    } catch (e: any) {
+      setMsg(`保存に失敗しました：${e?.message || e}`);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   }
 
   return (
-    <div style={{ maxWidth: 500, margin: "40px auto", padding: 20, border: "1px solid #ddd", borderRadius: 8 }}>
-      <h2>ご連絡先を入力してください</h2>
+    <div>
+      <h3 style={{ marginTop: 0 }}>ご連絡先</h3>
       <div style={{ display: "grid", gap: 10 }}>
-        <input placeholder="名前 (必須)" value={name} onChange={(e) => setName(e.target.value)} />
-        <input placeholder="メール (必須)" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <input placeholder="電話 (任意)" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        <input
+          placeholder="氏名 *"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <input
+          placeholder="メールアドレス *"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <input
+          placeholder="電話番号（任意）"
+          value={phone ?? ""}
+          onChange={(e) => setPhone(e.target.value)}
+        />
       </div>
-      {error && <p style={{ color: "red" }}>{error}</p>}
-      <button onClick={handleSubmit} disabled={loading} style={{ marginTop: 15 }}>
-        {loading ? "送信中..." : "次へ進む"}
-      </button>
+
+      <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+        <button className="btn" onClick={save} disabled={saving}>
+          {saving ? "保存中..." : "保存して設問に進む"}
+        </button>
+        {current?.id && <span className="help">登録済み: {current.email}</span>}
+      </div>
+      {msg && <div className="help" style={{ marginTop: 6 }}>{msg}</div>}
     </div>
   );
 }
