@@ -1,28 +1,24 @@
-// api/lead.ts
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE!;
 
-// 数字以外を除去
-function normalizeDigits(s: string) {
-  return (s || "").replace(/\D/g, "");
+// メール検証
+const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+function isValidEmail(s?: string | null) {
+  return !!s && emailRe.test(s.trim());
 }
 
-// 電話番号の形式チェック
+// 電話番号検証
+const phoneRe = /^[0-9+\-\s]{10,15}$/;
 function isValidPhone(s?: string | null) {
-  if (!s) return true; // 任意項目は未入力OK
-  if (!/^\+?[0-9\s-]+$/.test(s)) return false; // +, 数字, スペース, ハイフンのみ
-  const digits = normalizeDigits(s);
-  return digits.length >= 10 && digits.length <= 15;
+  if (!s) return true; // 任意
+  return phoneRe.test(s.trim());
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method Not Allowed" });
-  }
-  if (!SUPABASE_URL || !SERVICE_KEY) {
-    return res.status(500).json({ error: "Missing SUPABASE envs" });
   }
 
   try {
@@ -35,11 +31,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!name || !email) {
       return res.status(400).json({ error: "name and email are required" });
     }
-
-    // 電話番号形式チェック
-    if (!isValidPhone(phone || null)) {
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: "invalid email format" });
+    }
+    if (!isValidPhone(phone)) {
       return res.status(400).json({ error: "invalid phone format" });
     }
+
+    const payload = [
+      {
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        phone: phone && phone.trim() ? phone.trim() : null,
+      },
+    ];
 
     const r = await fetch(`${SUPABASE_URL}/rest/v1/leads`, {
       method: "POST",
@@ -49,42 +54,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         Authorization: `Bearer ${SERVICE_KEY}`,
         Prefer: "return=representation",
       },
-      body: JSON.stringify([
-        {
-          name,
-          email,
-          phone: (phone && phone.trim()) ? phone.trim() : null,
-        },
-      ]),
+      body: JSON.stringify(payload),
     });
 
     if (!r.ok) {
-      const text = await r.text().catch(() => "");
-      return res
-        .status(500)
-        .json({ error: text || `Supabase error (${r.status})` });
+      return res.status(500).json({ error: await r.text() });
     }
 
-    const rows = (await r.json()) as Array<{
-      id: string;
-      name: string;
-      email: string;
-      phone: string | null;
-    }>;
-
-    const row = rows?.[0];
-    if (!row?.id) {
-      return res.status(500).json({ error: "No row returned from Supabase" });
-    }
-
-    return res.status(200).json({
-      id: row.id,
-      leadId: row.id,
-      name: row.name,
-      email: row.email,
-      phone: row.phone,
-      ok: true,
-    });
+    const [row] = await r.json();
+    return res.status(200).json({ ok: true, id: row.id, leadId: row.id });
   } catch (e: any) {
     return res.status(500).json({ error: e?.message || "unknown error" });
   }
