@@ -37,7 +37,20 @@ export default function App() {
   const [data, setData] = useState<QuestionData | null>(null);
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [submitted, setSubmitted] = useState(false);
+
+  // 警告/通知メッセージ
   const [warning, setWarning] = useState<string | null>(null);
+
+  // 送信中フラグ
+  const [sending, setSending] = useState(false);
+
+  // 再送防止：この lead で一度でも送ったら sentAt を保持（時刻を記録）
+  const sentKey = lead ? `ceo-10q-sent:${lead.id}` : "";
+  const [sentAt, setSentAt] = useState<number | null>(() => {
+    if (!sentKey) return null;
+    const raw = localStorage.getItem(sentKey);
+    return raw ? Number(raw) : null;
+  });
 
   // 設問ロード
   useEffect(() => {
@@ -60,15 +73,16 @@ export default function App() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // リード未入力ならフォーム表示
   if (!lead) return <LeadForm onDone={setLead} />;
 
-  // ★ null 安全に扱うためのショートカット
+  // null 安全
   const questions = data?.questions ?? [];
 
-  // 集計（dataがまだ無い間は空配列で動く）
+  // 集計
   const unansweredCount = useMemo(
     () => questions.reduce((acc, q) => acc + (answers[q.id] == null ? 1 : 0), 0),
     [answers, questions]
@@ -99,9 +113,18 @@ export default function App() {
   };
 
   const handleSubmit = async () => {
-    // data が未読込の間は何もしない
+    // data 未読込の間は何もしない
     if (!data) return;
 
+    // すでに送信済みなら警告して終了（メールも既に送付済み）
+    if (sentAt) {
+      const when = new Date(sentAt).toLocaleString();
+      setWarning(`この診断は既に送信済みです（${when}）。メールも送付されています。二重送信はできません。`);
+      setSubmitted(true); // 結果カードは見せておく
+      return;
+    }
+
+    // 未回答がある場合は採点を中止して誘導
     if (unansweredCount > 0) {
       setSubmitted(false);
       setWarning(`未回答が ${unansweredCount} 問あります。未回答を選択してから、もう一度「採点する」を押してください。`);
@@ -109,11 +132,13 @@ export default function App() {
       return;
     }
 
-    setWarning(null);
-    setSubmitted(true);
-
+    // 初回送信
     try {
-      await fetch("/api/submit", {
+      setSending(true);
+      setWarning(null);
+      setSubmitted(true);
+
+      const resp = await fetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -126,8 +151,25 @@ export default function App() {
           answers,
         }),
       });
+
+      // 成否に関わらず二重送信を抑止したいなら、成功時のみ記録するのが妥当
+      if (resp.ok) {
+        const now = Date.now();
+        setSentAt(now);
+        if (sentKey) localStorage.setItem(sentKey, String(now));
+      } else {
+        // サーバ側がエラーのときは sentAt は記録しない
+        const txt = await resp.text();
+        console.error("submit error:", txt);
+        setWarning("送信に失敗しました。時間をおいて再度お試しください。");
+        setSubmitted(false);
+      }
     } catch (e) {
       console.error("submit failed", e);
+      setWarning("送信に失敗しました。ネットワークをご確認のうえ、再度お試しください。");
+      setSubmitted(false);
+    } finally {
+      setSending(false);
     }
   };
 
@@ -155,7 +197,7 @@ export default function App() {
           }}
         >
           {warning}
-          {firstUnansweredId && (
+          {warning.includes("未回答が") && firstUnansweredId && (
             <button
               onClick={() => scrollToQuestion(firstUnansweredId)}
               style={{
@@ -182,14 +224,14 @@ export default function App() {
           style={{
             marginBottom: 18,
             padding: 12,
-            border: `1px solid ${isUnanswered(q.id) && warning ? "#EF4444" : "#E5E7EB"}`,
+            border: `1px solid ${isUnanswered(q.id) && warning?.includes("未回答が") ? "#EF4444" : "#E5E7EB"}`,
             borderRadius: 10,
             background: "#fff",
           }}
         >
           <p style={{ margin: "0 0 8px", fontWeight: 600 }}>
             {q.text}{" "}
-            {isUnanswered(q.id) && warning && (
+            {isUnanswered(q.id) && warning?.includes("未回答が") && (
               <span style={{ color: "#EF4444", fontSize: 12, marginLeft: 8 }}>※ 未回答</span>
             )}
           </p>
@@ -211,24 +253,30 @@ export default function App() {
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
         <button
           onClick={handleSubmit}
+          disabled={sending}
           style={{
             padding: "10px 14px",
             borderRadius: 10,
             border: "1px solid #111",
-            background: "#111",
+            background: sending ? "#6b7280" : "#111",
             color: "#fff",
             fontWeight: 700,
-            cursor: "pointer",
+            cursor: sending ? "not-allowed" : "pointer",
           }}
         >
-          採点する
+          {sentAt ? "再送不可（送信済み）" : sending ? "送信中..." : "採点する"}
         </button>
         <span style={{ color: "#6b7280", fontSize: 12 }}>
           未回答: {unansweredCount} / {questions.length}
         </span>
+        {sentAt && (
+          <span style={{ color: "#6b7280", fontSize: 12 }}>
+            送信済み: {new Date(sentAt).toLocaleString()}
+          </span>
+        )}
       </div>
 
-      {submitted && warning == null && data && (
+      {submitted && !warning && data && (
         <div
           style={{
             marginTop: 20,
