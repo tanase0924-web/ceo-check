@@ -1,13 +1,13 @@
 // api/admin/responses.ts
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-// ★ ESM なので拡張子必須
+// ESM では拡張子必須
 import { assertAdminAuth } from "./_lib.js";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // 認証
+  // Basic認証
   try {
     assertAdminAuth(req);
   } catch {
@@ -24,6 +24,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { q, limit = "100" } = req.query as { q?: string; limit?: string };
 
+  // URL生成
   const base = SUPABASE_URL.replace(/\/+$/, "");
   let url: URL;
   try {
@@ -32,21 +33,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: `Invalid SUPABASE_URL: ${e?.message || String(e)}` });
   }
 
-  // リード情報と紐づけて取得するため、lead_id と join
+  // columns: id, created_at, lead_id, total, bucket, answers
+  // leads を埋め込み（JOIN）。検索で leads.* を使いたいので !inner を付与
   url.searchParams.set(
     "select",
-    "id,created_at,lead_id,question_id,answer,score,leads(name,email)"
+    "id,created_at,lead_id,total,bucket,answers,leads!inner(id,name,email,phone)"
   );
   url.searchParams.set("order", "created_at.desc");
   url.searchParams.set("limit", String(Math.min(Number(limit) || 100, 500)));
 
+  // 検索（氏名/メール/電話/判定bucket/合計点）
   if (q && q.trim()) {
+    const needle = q.trim();
     url.searchParams.set(
       "or",
       [
-        `answer.ilike.*${q}*`,
-        `leads.name.ilike.*${q}*`,
-        `leads.email.ilike.*${q}*`,
+        `leads.name.ilike.*${needle}*`,
+        `leads.email.ilike.*${needle}*`,
+        `leads.phone.ilike.*${needle}*`,
+        `bucket.ilike.*${needle}*`,
+        // 数値も文字列比較で簡易対応（"10" 等）
+        `total.eq.${Number.isFinite(+needle) ? Number(needle) : -999999}`,
       ].join(",")
     );
   }
