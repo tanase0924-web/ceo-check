@@ -61,7 +61,7 @@ export default function App() {
     setAnswers((prev) => ({ ...prev, [qid]: score }));
   }
 
-  // 合計点（全問回答済みのみ算出）
+  // 合計点（全問回答済みのみ算出：確定合計）
   const total: number | null = useMemo(() => {
     if (!payload) return null;
     const vals = payload.questions.map((q) => answers[q.id]); // (number | null)[]
@@ -69,7 +69,12 @@ export default function App() {
     return (vals as number[]).reduce((acc, v) => acc + v, 0);
   }, [answers, payload]);
 
-  // 判定
+  // ★ 追加：暫定合計（未回答は 0 として加算）
+  const partialTotal: number = useMemo(() => {
+    return Object.values(answers).reduce((acc, v) => acc + (typeof v === "number" ? v : 0), 0);
+  }, [answers]);
+
+  // 判定（確定合計が出たときのみ）
   const bucket: "" | "自走型" | "右腕不在型" = useMemo(() => {
     if (!payload || total === null) return "";
     return total >= payload.cutoff ? "自走型" : "右腕不在型";
@@ -210,6 +215,10 @@ export default function App() {
           <div className="toolbar">
             <div className="counter">
               進捗：{answeredCount}/{payload.questions.length}
+              {/* ★ 暫定合計を表示（未回答は0扱い） */}
+              <span className="help" style={{ marginLeft: 8 }}>
+                （暫定合計：{partialTotal} / {answeredCount * 2}）
+              </span>
             </div>
             <div style={{ flex: 1, minWidth: 220 }}>
               <div className="progress">
@@ -229,10 +238,12 @@ export default function App() {
               {sentAt ? "回答完了でメールで回答内容送信済" : sending ? "送信中..." : "採点する"}
             </button>
           </div>
-          <p className="help">※ 未回答があると警告。採点後の再送信は不可（重複メール防止）。</p>
+          <p className="help">
+            ※ 未回答があっても暫定合計を表示。確定の合計と判定は全問回答後に表示されます。
+          </p>
         </section>
 
-        {/* 結果（任意表示） */}
+        {/* 結果（全問回答＝確定時に表示） */}
         {total !== null && (
           <section className="card result">
             <div>
