@@ -37,8 +37,6 @@ export default function App() {
   const [data, setData] = useState<QuestionData | null>(null);
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [submitted, setSubmitted] = useState(false);
-
-  // 警告メッセージ
   const [warning, setWarning] = useState<string | null>(null);
 
   // 設問ロード
@@ -67,47 +65,45 @@ export default function App() {
   // リード未入力ならフォーム表示
   if (!lead) return <LeadForm onDone={setLead} />;
 
-  if (!data) return <div style={{ padding: 16 }}>読み込み中...</div>;
+  // ★ null 安全に扱うためのショートカット
+  const questions = data?.questions ?? [];
 
-  // 集計：null は 0 として加算
+  // 集計（dataがまだ無い間は空配列で動く）
   const unansweredCount = useMemo(
-    () => data.questions.reduce((acc, q) => acc + (answers[q.id] == null ? 1 : 0), 0),
-    [answers, data.questions]
+    () => questions.reduce((acc, q) => acc + (answers[q.id] == null ? 1 : 0), 0),
+    [answers, questions]
   );
-
   const total = useMemo(
-    () => data.questions.reduce((acc, q) => acc + (answers[q.id] ?? 0), 0),
-    [answers, data.questions]
+    () => questions.reduce((acc, q) => acc + (answers[q.id] ?? 0), 0),
+    [answers, questions]
   );
-
-  const bucket = classify(total, data.cutoff);
+  const bucket = classify(total, data?.cutoff ?? 0);
 
   const handleSelect = (qid: string, score: 0 | 1 | 2) => {
     setAnswers((prev) => ({ ...prev, [qid]: score }));
-    // 選び始めたら警告は消す
     setWarning(null);
   };
 
-  // 最初の未回答IDを探す
   const firstUnansweredId = useMemo(() => {
-    const q = data.questions.find((q) => answers[q.id] == null);
+    const q = questions.find((q) => answers[q.id] == null);
     return q?.id || null;
-  }, [answers, data.questions]);
+  }, [answers, questions]);
 
-  // 未回答スクロール
   const scrollToQuestion = (qid: string) => {
     const el = document.getElementById(`q-${qid}`);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "start" });
-      // 一時的にハイライト
       el.classList.add("need-answer");
       setTimeout(() => el.classList.remove("need-answer"), 1500);
     }
   };
 
   const handleSubmit = async () => {
+    // data が未読込の間は何もしない
+    if (!data) return;
+
     if (unansweredCount > 0) {
-      setSubmitted(false); // 採点は止める
+      setSubmitted(false);
       setWarning(`未回答が ${unansweredCount} 問あります。未回答を選択してから、もう一度「採点する」を押してください。`);
       if (firstUnansweredId) scrollToQuestion(firstUnansweredId);
       return;
@@ -135,13 +131,14 @@ export default function App() {
     }
   };
 
-  // 未回答かどうか
   const isUnanswered = (qid: string) => answers[qid] == null;
 
   return (
     <div style={{ padding: 20, maxWidth: 760, margin: "0 auto" }}>
-      <h1 style={{ marginBottom: 4 }}>{data.title}</h1>
-      <p style={{ color: "#6b7280", marginTop: 0 }}>判定カットオフ: {data.cutoff}点</p>
+      <h1 style={{ marginBottom: 4 }}>{data?.title ?? "経営者向け10問チェック"}</h1>
+      <p style={{ color: "#6b7280", marginTop: 0 }}>
+        判定カットオフ: {data?.cutoff ?? 0}点
+      </p>
 
       {warning && (
         <div
@@ -159,29 +156,26 @@ export default function App() {
         >
           {warning}
           {firstUnansweredId && (
-            <>
-              {" "}
-              <button
-                onClick={() => scrollToQuestion(firstUnansweredId)}
-                style={{
-                  marginLeft: 12,
-                  padding: "4px 8px",
-                  borderRadius: 6,
-                  border: "1px solid #991B1B",
-                  background: "white",
-                  color: "#991B1B",
-                  cursor: "pointer",
-                  fontSize: 12,
-                }}
-              >
-                最初の未回答へ移動
-              </button>
-            </>
+            <button
+              onClick={() => scrollToQuestion(firstUnansweredId)}
+              style={{
+                marginLeft: 12,
+                padding: "4px 8px",
+                borderRadius: 6,
+                border: "1px solid #991B1B",
+                background: "white",
+                color: "#991B1B",
+                cursor: "pointer",
+                fontSize: 12,
+              }}
+            >
+              最初の未回答へ移動
+            </button>
           )}
         </div>
       )}
 
-      {data.questions.map((q) => (
+      {questions.map((q) => (
         <div
           id={`q-${q.id}`}
           key={q.id}
@@ -230,11 +224,11 @@ export default function App() {
           採点する
         </button>
         <span style={{ color: "#6b7280", fontSize: 12 }}>
-          未回答: {unansweredCount} / {data.questions.length}
+          未回答: {unansweredCount} / {questions.length}
         </span>
       </div>
 
-      {submitted && warning == null && (
+      {submitted && warning == null && data && (
         <div
           style={{
             marginTop: 20,
@@ -252,12 +246,11 @@ export default function App() {
             ))}
           </ul>
           <p>
-            総合点: {total} / {data.questions.length * 2}
+            総合点: {total} / {questions.length * 2}
           </p>
         </div>
       )}
 
-      {/* 軽いハイライト用のスタイル（JSでclassを付け外し） */}
       <style>{`
         .need-answer {
           box-shadow: 0 0 0 3px rgba(239,68,68,0.35);
