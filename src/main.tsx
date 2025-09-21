@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import Admin from "./Admin"; // ← さっき作った管理画面
 import "./index.css";
+import "./ui.css";
 
 function Root() {
   const [hash, setHash] = React.useState<string>(() => window.location.hash);

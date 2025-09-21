@@ -1,0 +1,102 @@
+:root{
+  --bg:#0f1222;           /* 背景 */
+  --panel:#161a2f;
+  --panel-2:#1b2040;
+  --text:#e9ecf6;
+  --muted:#a6accd;
+  --brand:#7c5cff;        /* ブランド色 */
+  --brand-2:#22d4ff;
+  --ok:#10b981;
+  --warn:#f59e0b;
+  --danger:#ef4444;
+  --radius:14px;
+  --shadow:0 10px 30px rgba(0,0,0,.35);
+}
+
+*{box-sizing:border-box}
+html,body,#root{height:100%}
+body{
+  margin:0;background:radial-gradient(1200px 800px at 15% -10%,#1a1f3f33,transparent) , var(--bg);
+  color:var(--text); font:16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+
+/* ヘッダー */
+.hero{
+  max-width:980px; margin:32px auto 20px; padding:24px 20px; border-radius:var(--radius);
+  background:linear-gradient(135deg,var(--panel),var(--panel-2));
+  box-shadow:var(--shadow); position:relative; overflow:hidden;
+}
+.hero:after{
+  content:""; position:absolute; inset:auto -20% -60px -20%;
+  height:180px; background:radial-gradient(400px 160px at 30% 0,var(--brand)40%,transparent 60%),
+                 radial-gradient(360px 140px at 70% 10%,var(--brand-2)35%,transparent 60%);
+  opacity:.25; filter:blur(30px);
+}
+.badge{display:inline-flex;gap:8px; align-items:center; color:#cdd2ff; background:#ffffff0f; padding:6px 10px; border:1px solid #ffffff1a; border-radius:999px}
+.title{margin:10px 0 4px; font-weight:800; letter-spacing:.2px; font-size:clamp(24px,3.2vw,34px)}
+.subtitle{color:var(--muted); margin:0}
+
+/* コンテナ */
+.wrap{max-width:980px; margin:0 auto 80px; padding:0 20px}
+
+/* カード */
+.card{
+  background:linear-gradient(180deg,var(--panel),#141935);
+  border:1px solid #ffffff10; border-radius:var(--radius);
+  padding:18px 18px; box-shadow:var(--shadow);
+}
+.grid{display:grid; gap:14px}
+@media (min-width:720px){ .grid{gap:18px} }
+
+/* 質問 */
+.q{
+  display:grid; gap:12px;
+  border:1px solid #ffffff12; border-radius:12px; padding:16px;
+  background:#0f1430;
+}
+.q h3{margin:0 0 6px; font-size:16px; font-weight:700}
+.q .choices{display:grid; gap:10px}
+.radio{
+  display:flex; align-items:center; gap:12px;
+  padding:10px 12px; border-radius:10px; border:1px solid #ffffff12; background:#12183a; cursor:pointer;
+  transition:transform .04s ease, border-color .2s ease, background .2s ease;
+}
+.radio:hover{transform:translateY(-1px); border-color:#ffffff25}
+.radio input{appearance:none; width:18px; height:18px; border-radius:50%; border:2px solid #9aa3ff; outline:none; display:grid; place-items:center}
+.radio input:checked{border-color:var(--brand); box-shadow:0 0 0 4px #7c5cff33 inset}
+.radio .label{font-weight:600}
+.help{color:var(--muted); font-size:12px}
+
+/* アクション帯 */
+.toolbar{
+  display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap;
+  margin:18px 0 6px;
+}
+.btn{
+  appearance:none; border:none; cursor:pointer; font-weight:800; letter-spacing:.2px;
+  padding:12px 16px; border-radius:12px; color:white; background:linear-gradient(135deg,var(--brand),#5c35ff);
+  box-shadow:0 10px 18px #5c35ff3a; transition:transform .06s ease, filter .2s;
+}
+.btn:hover{transform:translateY(-1px)}
+.btn:disabled{opacity:.6; cursor:not-allowed; filter:grayscale(.2)}
+
+.link{
+  color:#cdd2ff; text-decoration:none; border-bottom:1px dashed #cdd2ff66; padding-bottom:1px;
+}
+.counter{color:var(--muted); font-weight:700}
+
+/* プログレス */
+.progress{
+  height:10px; background:#0e1330; border:1px solid #ffffff16; border-radius:999px; overflow:hidden;
+}
+.progress > i{display:block; height:100%; width:0%; background:linear-gradient(90deg,var(--brand),var(--brand-2))}
+.result{
+  display:grid; gap:6px; padding:14px; border:1px solid #ffffff16; border-radius:12px; background:#111639;
+}
+.bucket-ok{color:var(--ok); font-weight:800}
+.bucket-warn{color:var(--warn); font-weight:800}
+.bucket-bad{color:var(--danger); font-weight:800}
+
+/* フッター */
+.foot{color:#98a0c9; font-size:12px; margin-top:16px}
