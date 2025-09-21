@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./ui.css";
-import LeadForm, { Lead } from "./LeadForm";
+import type { Lead } from './LeadForm';
 
 type Choice = { label: string; score: number };
 type Question = { id: string; text: string; choices: Choice[] };
