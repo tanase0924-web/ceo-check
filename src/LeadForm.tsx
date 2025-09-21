@@ -1,5 +1,4 @@
-// src/LeadForm.tsx
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export type Lead = {
   id?: string;
@@ -8,35 +7,29 @@ export type Lead = {
   phone?: string | null;
 };
 
-type Props = {
-  onDone: (lead: Lead) => void;   // 保存後、id を含めて親に返す
-  current?: Lead;                 // 既存の値（任意）
-};
+// 数字以外を除去
+function normalizeDigits(s: string) {
+  return (s || "").replace(/\D/g, "");
+}
 
-export default function LeadForm({ onDone, current }: Props) {
-  const [name, setName]   = useState(current?.name ?? "");
-  const [email, setEmail] = useState(current?.email ?? "");
-  const [phone, setPhone] = useState(current?.phone ?? "");
+// 電話番号の形式チェック
+function isValidPhone(s: string) {
+  if (!s) return true; // 未入力はOK（任意項目）
+  if (!/^\+?[0-9\s-]+$/.test(s)) return false; // 許可文字のみ
+  const digits = normalizeDigits(s);
+  return digits.length >= 10 && digits.length <= 15; // 桁数チェック
+}
+
+export default function LeadForm({ onDone }: { onDone: (lead: Lead) => void }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const [savedId, setSavedId] = useState<string | null>(current?.id ?? null);
 
-  // current が変わったときにフォームへ反映
-  useEffect(() => {
-    if (!current) return;
-    setName(current.name ?? "");
-    setEmail(current.email ?? "");
-    setPhone(current.phone ?? "");
-    if (current.id) setSavedId(current.id);
-  }, [current]);
-
-  function validate(): string | null {
-    if (!name.trim()) return "氏名は必須です。";
-    if (!email.trim()) return "メールアドレスは必須です。";
-    // 超ざっくりな email バリデーション
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) {
-      return "メールアドレスの形式が正しくありません。";
-    }
+  function validate() {
+    if (!name.trim()) return "氏名を入力してください";
+    if (!email.trim()) return "メールアドレスを入力してください";
     return null;
   }
 
@@ -47,13 +40,18 @@ export default function LeadForm({ onDone, current }: Props) {
       return;
     }
 
+    if (!isValidPhone(phone)) {
+      setMsg("電話番号の形式が正しくありません（数字・ハイフン・スペース・+のみ、桁数10〜15桁）");
+      return;
+    }
+
     setSaving(true);
     setMsg(null);
     try {
       const body = {
         name: name.trim(),
         email: email.trim(),
-        phone: (phone || "").trim(),
+        phone: phone.trim() || null,
       };
 
       const res = await fetch("/api/lead", {
@@ -62,78 +60,56 @@ export default function LeadForm({ onDone, current }: Props) {
         body: JSON.stringify(body),
       });
 
-      if (!res.ok) {
-        const t = await res.text();
-        throw new Error(t || `HTTP ${res.status}`);
-      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "保存に失敗しました");
 
-      let json: any = null;
-      try {
-        json = await res.json();
-      } catch {
-        json = {};
-      }
-
-      // 返却パターンのどれでも拾う
-      const newId: string | undefined =
-        json?.id ?? json?.lead?.id ?? json?.data?.id;
-
-      if (!newId) {
-        // id が取れなかった場合でも onDone を呼ぶ（API 実装差異の保険）
-        setMsg("保存は完了しましたが、ID を取得できませんでした。");
-        onDone({ ...body, id: undefined });
-        return;
-      }
-
-      setSavedId(newId);
-      setMsg("保存しました。続けて設問に回答してください。");
-
-      // 親へ「id 付き」で返す
-      onDone({
-        id: newId,
-        name: body.name,
-        email: body.email,
-        phone: body.phone,
-      });
+      onDone({ ...body, id: data.id || data.leadId });
+      setMsg("保存しました");
     } catch (e: any) {
-      setMsg(`保存に失敗しました：${e?.message || e}`);
+      setMsg(`保存に失敗しました: ${e.message}`);
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div>
-      <h3 style={{ marginTop: 0 }}>ご連絡先</h3>
-
-      <div style={{ display: "grid", gap: 10 }}>
-        <input
-          placeholder="氏名 *"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <input
-          placeholder="メールアドレス *"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <input
-          placeholder="電話番号（任意）"
-          value={phone ?? ""}
-          onChange={(e) => setPhone(e.target.value)}
-        />
+    <div className="card">
+      <h3>ご連絡先</h3>
+      <div>
+        <label>
+          氏名
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </label>
       </div>
-
-      <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>
-        <button className="btn" onClick={save} disabled={saving}>
-          {saving ? "保存中..." : savedId ? "更新する" : "保存して設問に進む"}
-        </button>
-        {savedId && (
-          <span className="help">登録済み: {email}（ID: {savedId.slice(0, 8)}…）</span>
-        )}
+      <div>
+        <label>
+          メールアドレス
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </label>
       </div>
-
-      {msg && <div className="help" style={{ marginTop: 6 }}>{msg}</div>}
+      <div>
+        <label>
+          電話番号（任意）
+          <input
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="例: 090-1234-5678"
+          />
+        </label>
+      </div>
+      {msg && <p style={{ color: "red" }}>{msg}</p>}
+      <button onClick={save} disabled={saving} className="btn">
+        {saving ? "保存中…" : "保存"}
+      </button>
     </div>
   );
 }
