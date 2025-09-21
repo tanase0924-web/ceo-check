@@ -20,10 +20,12 @@ export default function App() {
 
   // 回答（未回答は null）
   const [answers, setAnswers] = useState<Record<string, number | null>>({});
-  const answeredCount = useMemo(
-    () => Object.values(answers).filter((v): v is number => typeof v === "number").length,
-    [answers]
-  );
+  const answeredCount = useMemo(() => {
+    return Object.values(answers).reduce<number>(
+      (acc, v) => acc + (typeof v === "number" ? 1 : 0),
+      0
+    );
+  }, [answers]);
 
   // リード（LeadForm が保存して id 付きで渡す）
   const [lead, setLead] = useState<Lead | null>(null);
@@ -64,14 +66,18 @@ export default function App() {
   // 合計点（全問回答済みのみ算出：確定合計）
   const total: number | null = useMemo(() => {
     if (!payload) return null;
-    const vals = payload.questions.map((q) => answers[q.id]); // (number | null)[]
+    // (number | null)[] → 全て number になったら合計、それ以外なら null
+    const vals = payload.questions.map((q) => answers[q.id]);
     if (vals.some((v) => v === null)) return null;
     return (vals as number[]).reduce((acc, v) => acc + v, 0);
   }, [answers, payload]);
 
-  // ★ 追加：暫定合計（未回答は 0 として加算）
+  // 暫定合計（未回答は 0 として加算）
   const partialTotal: number = useMemo(() => {
-    return Object.values(answers).reduce((acc, v) => acc + (typeof v === "number" ? v : 0), 0);
+    return Object.values(answers).reduce<number>(
+      (acc, v) => acc + (typeof v === "number" ? v : 0),
+      0
+    );
   }, [answers]);
 
   // 判定（確定合計が出たときのみ）
@@ -122,7 +128,7 @@ export default function App() {
 
     // null を含まない answers を作成
     const cleanAnswers: Record<string, number> = {};
-    for (const [k, v] of Object.entries(answers)) cleanAnswers[k] = v as number;
+    for (const [k, v] of Object.entries(answers)) cleanAnswers[k] = (v ?? 0) as number;
 
     setSending(true);
     try {
@@ -167,10 +173,16 @@ export default function App() {
     );
   }
 
-  const maxScore = payload.questions.reduce((acc, q) => {
-    const max = Math.max(...q.choices.map((c) => c.score));
+  // 最大得点（各設問の最大スコア合計）※必ず初期値 0 を指定
+  const maxScore = payload.questions.reduce<number>((acc, q) => {
+    const max = q.choices.reduce<number>((m, c) => (c.score > m ? c.score : m), 0);
     return acc + max;
   }, 0);
+
+  const progressPct =
+    payload.questions.length > 0
+      ? (answeredCount / payload.questions.length) * 100
+      : 0;
 
   return (
     <>
@@ -215,18 +227,14 @@ export default function App() {
           <div className="toolbar">
             <div className="counter">
               進捗：{answeredCount}/{payload.questions.length}
-              {/* ★ 暫定合計を表示（未回答は0扱い） */}
+              {/* 暫定合計を表示（未回答は0扱い） */}
               <span className="help" style={{ marginLeft: 8 }}>
                 （暫定合計：{partialTotal} / {answeredCount * 2}）
               </span>
             </div>
             <div style={{ flex: 1, minWidth: 220 }}>
               <div className="progress">
-                <i
-                  style={{
-                    width: `${(answeredCount / payload.questions.length) * 100}%`,
-                  }}
-                />
+                <i style={{ width: `${progressPct}%` }} />
               </div>
             </div>
             <button
@@ -243,7 +251,7 @@ export default function App() {
           </p>
         </section>
 
-        {/* 結果（全問回答＝確定時に表示） */}
+        {/* 確定結果（全問回答時のみ） */}
         {total !== null && (
           <section className="card result">
             <div>
