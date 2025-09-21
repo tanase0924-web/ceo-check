@@ -20,8 +20,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
 
-  // 回答（未回答は undefined）
-  const [answers, setAnswers] = useState<Record<string, number | undefined>>({});
+  // 回答（未回答は null に統一）
+  const [answers, setAnswers] = useState<Record<string, number | null>>({});
   const answeredCount = useMemo(
     () => Object.values(answers).filter((v): v is number => typeof v === "number").length,
     [answers]
@@ -35,13 +35,12 @@ export default function App() {
   const [sentAt, setSentAt] = useState<string | null>(null); // 二重送信防止
   const submitTimes = useRef(0);
 
-  // 結果
+  // 結果（全問回答済みのときだけ number、それ以外は null）
   const total: number | null = useMemo(() => {
     if (!payload) return null;
-    const vals = payload.questions.map((q) => answers[q.id]);
-    if (vals.some((v) => typeof v !== "number")) return null;
-    // 初期値 0 を渡して acc が null 扱いにならないようにする
-    return vals.reduce((acc, v) => acc + (v as number), 0);
+    const vals = payload.questions.map((q) => answers[q.id]); // number | null
+    if (vals.some((v) => v === null)) return null;
+    return vals.reduce((acc, v) => acc + (v as number), 0); // 初期値 0 を明示
   }, [answers, payload]);
 
   const bucket: "" | "自走型" | "右腕不在型" = useMemo(() => {
@@ -58,8 +57,8 @@ export default function App() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as QuestionsPayload;
 
-        const init: Record<string, number | undefined> = {};
-        for (const q of data.questions) init[q.id] = undefined;
+        const init: Record<string, number | null> = {};
+        for (const q of data.questions) init[q.id] = null; // 未回答は null
 
         setPayload(data);
         setAnswers(init);
@@ -72,7 +71,7 @@ export default function App() {
     })();
   }, []);
 
-  // ---------- 変更ハンドラ ----------
+  // ---------- 回答選択 ----------
   function onSelect(qid: string, score: number) {
     setAnswers((prev) => ({ ...prev, [qid]: score }));
   }
@@ -81,11 +80,11 @@ export default function App() {
   function getUnansweredIds(): string[] {
     if (!payload) return [];
     return payload.questions
-      .filter((q) => typeof answers[q.id] !== "number")
+      .filter((q) => answers[q.id] === null)
       .map((q) => q.id);
   }
 
-  // ---------- 提出 ----------
+  // ---------- 送信 ----------
   async function handleSubmit() {
     if (!payload) return;
 
@@ -110,7 +109,7 @@ export default function App() {
       return;
     }
 
-    // 採点結果が null のまま使われないようにガード
+    // 採点結果ガード
     if (total === null) {
       alert("採点できませんでした。未回答がないかご確認ください。");
       return;
@@ -133,7 +132,7 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           leadId: lead.id,
-          total,                 // ← total は number 確定
+          total,                 // number 確定
           bucket: resultBucket,
           answers,
         }),
@@ -153,7 +152,7 @@ export default function App() {
     }
   }
 
-  // ---------- レンダリング ----------
+  // ---------- UI ----------
   if (loading) {
     return (
       <main className="wrap">
@@ -216,13 +215,10 @@ export default function App() {
           </p>
         </section>
 
-        {/* リードフォーム（氏名/メール/電話） */}
+        {/* リードフォーム（氏名/メール/電話）
+            ※ あなたの LeadForm は onDone だけを受け取る実装のため current を渡さない */}
         <section className="card">
-          {/* あなたの LeadForm は onDone を受け取る実装なので合わせる */}
-          <LeadForm
-            onDone={(l: Lead) => setLead(l)}
-            current={lead || undefined}
-          />
+          <LeadForm onDone={(l: Lead) => setLead(l)} />
         </section>
 
         {/* 質問一覧 */}
@@ -257,9 +253,7 @@ export default function App() {
               <strong>判定：</strong>
               <span
                 className={
-                  bucket === "自走型"
-                    ? "bucket-ok"
-                    : "bucket-bad" // 現仕様は2分類
+                  bucket === "自走型" ? "bucket-ok" : "bucket-bad" // 現仕様は2分類
                 }
               >
                 {bucket}
