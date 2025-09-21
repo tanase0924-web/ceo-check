@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./ui.css";
-import type { Lead } from './LeadForm';
+import LeadForm from "./LeadForm";
+import type { Lead } from "./LeadForm";
 
 type Choice = { label: string; score: number };
 type Question = { id: string; text: string; choices: Choice[] };
@@ -31,21 +32,7 @@ export default function App() {
   const [sentAt, setSentAt] = useState<string | null>(null); // 二重送信防止
   const submitTimes = useRef(0);
 
-  // 合計点（全問回答済みのみ算出）
-  const total: number | null = useMemo(() => {
-    if (!payload) return null;
-    const vals = payload.questions.map((q) => answers[q.id]); // (number | null)[]
-    if (vals.some((v) => v === null)) return null;
-    return (vals as number[]).reduce((acc, v) => acc + v, 0); // 初期値 0 指定
-  }, [answers, payload]);
-
-  // 判定
-  const bucket: "" | "自走型" | "右腕不在型" = useMemo(() => {
-    if (!payload || total === null) return "";
-    return total >= payload.cutoff ? "自走型" : "右腕不在型";
-  }, [payload, total]);
-
-  // 初期ロード
+  // 初期ロード：設問取得
   useEffect(() => {
     (async () => {
       try {
@@ -73,6 +60,20 @@ export default function App() {
     setAnswers((prev) => ({ ...prev, [qid]: score }));
   }
 
+  // 合計点（全問回答済みのみ算出）
+  const total: number | null = useMemo(() => {
+    if (!payload) return null;
+    const vals = payload.questions.map((q) => answers[q.id]); // (number | null)[]
+    if (vals.some((v) => v === null)) return null;
+    return (vals as number[]).reduce((acc, v) => acc + v, 0);
+  }, [answers, payload]);
+
+  // 判定
+  const bucket: "" | "自走型" | "右腕不在型" = useMemo(() => {
+    if (!payload || total === null) return "";
+    return total >= payload.cutoff ? "自走型" : "右腕不在型";
+  }, [payload, total]);
+
   // 未回答IDs
   function getUnansweredIds(): string[] {
     if (!payload) return [];
@@ -81,7 +82,7 @@ export default function App() {
       .map((q) => q.id);
   }
 
-  // 提出
+  // 送信
   async function handleSubmit() {
     if (!payload) return;
 
@@ -91,12 +92,12 @@ export default function App() {
       alert(
         `この回答はすでに送信済みです（${new Date(
           sentAt
-        ).toLocaleString()}）。\n重複送信はできません。`
+        ).toLocaleString()}）。重複送信はできません。`
       );
       return;
     }
 
-    // 未回答
+    // 未回答チェック
     const missing = getUnansweredIds();
     if (missing.length) {
       const first = missing[0];
@@ -110,7 +111,6 @@ export default function App() {
       alert("採点できませんでした。未回答がないかご確認ください。");
       return;
     }
-
     if (!lead || !lead.id) {
       alert("送信前に、上部のフォームで氏名・メール・電話を保存してください。");
       return;
@@ -126,7 +126,7 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          leadId: lead.id, // ★ 重要：leadId を送る
+          leadId: lead.id, // 重要：leadId を送る
           total,
           bucket, // "自走型" | "右腕不在型"
           answers: cleanAnswers,
@@ -163,6 +163,11 @@ export default function App() {
     );
   }
 
+  const maxScore = payload.questions.reduce((acc, q) => {
+    const max = Math.max(...q.choices.map((c) => c.score));
+    return acc + max;
+  }, 0);
+
   return (
     <>
       <header className="hero">
@@ -180,7 +185,11 @@ export default function App() {
             </div>
             <div style={{ flex: 1, minWidth: 220 }}>
               <div className="progress">
-                <i style={{ width: `${(answeredCount / payload.questions.length) * 100}%` }} />
+                <i
+                  style={{
+                    width: `${(answeredCount / payload.questions.length) * 100}%`,
+                  }}
+                />
               </div>
             </div>
             <button
@@ -197,7 +206,7 @@ export default function App() {
 
         {/* リードフォーム（保存すると id 付きで onDone される） */}
         <section className="card">
-          <LeadForm onDone={(l) => setLead(l)} current={lead || undefined} />
+          <LeadForm onDone={(l: Lead) => setLead(l)} current={lead || undefined} />
         </section>
 
         {/* 質問 */}
@@ -225,12 +234,14 @@ export default function App() {
           <section className="card result">
             <div>
               <strong>総合点：</strong>
-              {total} / {payload.questions.length * 2}
+              {total} / {maxScore}
             </div>
             <div>
               <strong>判定：</strong>
               <span className={bucket === "自走型" ? "bucket-ok" : "bucket-bad"}>{bucket}</span>
-              <span className="help" style={{ marginLeft: 8 }}>（カットオフ：{payload.cutoff} 点）</span>
+              <span className="help" style={{ marginLeft: 8 }}>
+                （カットオフ：{payload.cutoff} 点）
+              </span>
             </div>
             <div className="help">※ 詳細はメールをご確認ください。</div>
           </section>
